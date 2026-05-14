@@ -472,3 +472,110 @@ nav {
     opacity: 0.06;
 }
 
+
+
+
+
+/*HOW IT WORKS*/
+
+#how-it-works {
+    padding: 60px 20px;
+    width: 100vw;
+    background: var(--black);
+}
+
+.txt-container{
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+    font-size: large;
+}
+
+.targets-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-top: 60px;
+}
+
+.target-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 40px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s;
+}
+
+.target-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+}
+
+.target-card.mining::before { background: var(--accent); }
+.target-card.drivers::before { background: var(--accent2); }
+
+.target-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+
+.target-card.mining:hover { border-color: rgba(0,212,255,0.3); }
+.target-card.drivers:hover { border-color: rgba(255,107,0,0.3); }
+
+.target-number {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 80px;
+    line-height: 1;
+    opacity: 0.08;
+    position: absolute;
+    top: 20px; right: 30px;
+    letter-spacing: -4px;
+}
+
+.target-card.mining .target-number { color: var(--accent); }
+.target-card.drivers .target-number { color: var(--accent2); }
+
+.target-icon { font-size: 36px; margin-bottom: 20px; }
+
+.target-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: 16px;
+}
+
+.target-desc {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--muted);
+    margin-bottom: 28px;
+}
+
+.target-benefits {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.target-benefits li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.target-benefits li::before {
+    content: '▸';
+    font-size: 10px;
+}
+
+.target-card.mining .target-benefits li::before { color: var(--accent); }
+.target-card.drivers .target-benefits li::before { color: var(--accent2); }
