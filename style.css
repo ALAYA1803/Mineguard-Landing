@@ -621,6 +621,59 @@ nav {
   font-weight: 500;
 }
 
+.team-container{
+    max-width: 1200px;
+    margin: 50px auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 40px;
+    position: relative;
+    z-index: 10;
+    justify-content: center;
+}
+
+.team-card{
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 25px 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.team-card:hover{
+    transform: translateY(-8px);
+    border-color: var(--accent);
+    box-shadow: var(--glow);
+}
+
+.team-card img{
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 12px;
+    margin-bottom: 18px;
+}
+
+.team-card h3{
+    font-size: 16px;
+    color: white;
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.team-card p{
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.team-card span{
+    color: var(--muted);
+    font-size: 13px;
+}
+
 
 
 /*RADAR*/
