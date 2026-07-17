@@ -3,7 +3,13 @@
 Public-facing marketing landing page for the **MineGuard** mining safety platform, developed by **Vertex**. Presents the Digital Safety Mesh value proposition to open-pit mining operators, fleet supervisors, and light-vehicle drivers.
 
 Static site — no build step, no backend dependency.
+# Pregunta 1: Definition of application service layer requirements
 
+| Application Service Layer Requirement | Especificación de requisitos |
+| :--- | :--- |
+| **Servicio de Control de Temperatura Local** |  Interfaz visual en el hardware mediante un display LCD-1602 que muestre la temperatura actual de la taza y la temperatura ideal configurada.<br> Controles de entrada físicos mediante dos botones táctiles etiquetados como "+" y "-" para que el usuario configure la temperatura ideal (desde 40.5°C hasta 79.5°C en intervalos de 0.5°C).<br> Indicador visual mediante un LED que se encienda únicamente cuando la bebida alcance el nivel de temperatura ideal. |
+| **Servicio de Notificación de Estado Operativo** |  Interfaz de texto en el display LCD que informe dinámicamente en la esquina superior derecha el estado del calentador: mostrar "READY", "WAITING" o "WARMING".<br> La interfaz visual debe apagarse automáticamente para indicar que el dispositivo ha entrado en modo "Stand By" tras 30 segundos sin detectar una taza.<br> Al detectar nuevamente una taza, la interfaz visual debe reactivarse automáticamente y actualizar el estado mostrado. |
+| **Servicio de Monitoreo y Telemetría** |  Interfaz de consola donde se pueda monitorear el log de actividad del dispositivo en tiempo real.<br> El sistema debe imprimir en la consola cada 5 segundos una estructura de datos en formato JSON.<br> El JSON debe contener la información vital del dispositivo: `deviceMacAddress`, `operationMode`, `targetTemperature`, `currentTemperature`, `warmerState` y `createdAt`. |
 ---
 
 ## Pages
@@ -143,3 +149,296 @@ Then open `http://localhost:8080`.
 Terms & Conditions are available at [`terms.html`](terms.html). Footer legal links point to this page.
 
 Product brand: **MineGuard** — Company brand: **Vertex**
+
+
+
+.ino :
+
+```
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <ArduinoJson.h>
+#include <WiFi.h>
+#include <Adafruit_MLX90614.h>
+
+class Sensor {
+public:
+    virtual void update() = 0;
+};
+
+class Actuator {
+public:
+    virtual void execute() = 0;
+};
+
+
+class LedActuator : public Actuator {
+private:
+    int pin;
+public:
+    LedActuator(int p) : pin(p) { 
+        pinMode(pin, OUTPUT); 
+        turnOff();
+    }
+    void turnOn() { digitalWrite(pin, HIGH); }
+    void turnOff() { digitalWrite(pin, LOW); }
+    void execute() override {} 
+};
+
+class RelayActuator : public Actuator {
+private:
+    int pin;
+public:
+    RelayActuator(int p) : pin(p) { 
+        pinMode(pin, OUTPUT); 
+        turnOff();
+    }
+    void turnOn() { digitalWrite(pin, HIGH); }
+    void turnOff() { digitalWrite(pin, LOW); }
+    void execute() override {}
+};
+
+
+class ButtonSensor : public Sensor {
+private:
+    int pin;
+    bool lastState;
+public:
+    bool isPressed;
+    ButtonSensor(int p) : pin(p), lastState(HIGH), isPressed(false) { 
+        pinMode(pin, INPUT_PULLUP); 
+    }
+    void update() override {
+        bool currentState = digitalRead(pin);
+        isPressed = (currentState == LOW && lastState == HIGH);
+        lastState = currentState;
+    }
+};
+
+class TempSensor : public Sensor {
+public:
+    Adafruit_MLX90614 mlx;
+    float objectTemp;
+    float ambientTemp;
+    bool isSimulated;
+
+    TempSensor() : objectTemp(40.0), ambientTemp(25.0), isSimulated(false) {}
+
+    void init() {
+        if (!mlx.begin()) {
+            Serial.println("Warning: MLX90614 Custom Chip not found. Using Simulation Engine.");
+            isSimulated = true;
+        }
+    }
+
+    void update() override {
+        if (!isSimulated) {
+            objectTemp = mlx.readObjectTempC();
+            ambientTemp = mlx.readAmbientTempC();
+        }
+    }
+};
+
+class HeatCoasterDevice {
+private:
+    float targetTemperature = 45.0;
+    String operationMode = "ACTIVE";
+    String warmerState = "WAITING";
+    
+    unsigned long lastTelemetryTime = 0;
+    unsigned long cupRemovedTime = 0;
+    bool isCupPresent = true;
+
+    LiquidCrystal_I2C lcd;
+    LedActuator statusLed;
+    RelayActuator heaterRelay;
+    ButtonSensor btnUp;
+    ButtonSensor btnDown;
+    TempSensor tempSensor;
+
+public:
+    HeatCoasterDevice() : lcd(0x27, 16, 2), statusLed(2), heaterRelay(15), btnUp(12), btnDown(14) {}
+
+    void setup() {
+        Serial.begin(115200);
+        Wire.begin(21, 22);
+        
+        Serial.println("Company: Ikago");
+        Serial.println("Developer: Rodrigo Alaya Cabrera - FIRSTstudent team");
+        Serial.print("Device MAC: ");
+        Serial.println(WiFi.macAddress());
+
+        lcd.init();
+        lcd.backlight();
+        tempSensor.init();
+    }
+
+    void loop() {
+        btnUp.update();
+        btnDown.update();
+        tempSensor.update();
+
+        if (btnUp.isPressed && targetTemperature < 79.5) targetTemperature += 0.5;
+        if (btnDown.isPressed && targetTemperature > 40.5) targetTemperature -= 0.5;
+
+        if (tempSensor.isSimulated && operationMode == "ACTIVE") {
+            if (warmerState == "WARMING") tempSensor.objectTemp += 0.5; 
+            if (warmerState == "WAITING" && tempSensor.objectTemp > 25.0) tempSensor.objectTemp -= 0.2;
+        }
+
+        evaluateOperationMode();
+        
+        if (operationMode == "ACTIVE") {
+            processTemperatureRules();
+            updateDisplay();
+        }
+
+        handleTelemetry();
+        delay(50);
+    }
+
+private:
+    void evaluateOperationMode() {
+        float diff = abs(tempSensor.objectTemp - tempSensor.ambientTemp);
+        
+        if (diff < 1.0) {
+            if (isCupPresent) {
+                isCupPresent = false;
+                cupRemovedTime = millis();
+            } else if (millis() - cupRemovedTime > 30000 && operationMode == "ACTIVE") {
+                operationMode = "STAND_BY";
+                warmerState = "WAITING";
+                lcd.noBacklight();
+                lcd.clear();
+                statusLed.turnOff();
+                heaterRelay.turnOff();
+            }
+        } else {
+            isCupPresent = true;
+            if (operationMode == "STAND_BY") {
+                operationMode = "ACTIVE";
+                lcd.backlight();
+            }
+        }
+    }
+
+    void processTemperatureRules() {
+        if (abs(tempSensor.objectTemp - targetTemperature) <= 0.5) {
+            warmerState = "READY";
+            statusLed.turnOn();
+            heaterRelay.turnOff();
+        } 
+        else if (tempSensor.objectTemp < targetTemperature) {
+            warmerState = "WARMING";
+            statusLed.turnOff();
+            heaterRelay.turnOn();
+        } 
+        else {
+            warmerState = "WAITING";
+            statusLed.turnOff();
+            heaterRelay.turnOff();
+        }
+    }
+
+    void updateDisplay() {
+        lcd.setCursor(0, 0);
+        lcd.print(String(tempSensor.objectTemp, 1) + "C   ");
+        
+        lcd.setCursor(9, 0);
+        lcd.print(warmerState == "READY" ? "READY  " : (warmerState == "WARMING" ? "WARMING" : "WAITING"));
+
+        lcd.setCursor(0, 1);
+        lcd.print("Target: " + String(targetTemperature, 1) + "C ");
+    }
+
+    void handleTelemetry() {
+        if (millis() - lastTelemetryTime >= 5000) {
+            StaticJsonDocument<256> doc;
+            doc["deviceMacAddress"] = WiFi.macAddress();
+            doc["operationMode"] = operationMode;
+            doc["targetTemperature"] = targetTemperature;
+            doc["currentTemperature"] = tempSensor.objectTemp;
+            doc["warmerState"] = warmerState;
+            doc["createdAt"] = millis(); 
+
+            serializeJson(doc, Serial);
+            Serial.println();
+            
+            lastTelemetryTime = millis();
+        }
+    }
+};
+HeatCoasterDevice device;
+
+void setup() {
+    device.setup();
+}
+
+void loop() {
+    device.loop();
+}
+```
+
+json:
+```
+{
+  "version": 1,
+  "author": "Rodrigo Alaya Cabrera",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": { "macAddress": "24:0A:C4:00:94:81" } 
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd",
+      "top": -147.2,
+      "left": 332,
+      "attrs": { "pins": "i2c" }
+    },
+    {
+      "type": "wokwi-pushbutton-6mm",
+      "id": "btn_up",
+      "top": -40.6,
+      "left": -105.6,
+      "attrs": { "color": "green", "label": "+" }
+    },
+    {
+      "type": "wokwi-pushbutton-6mm",
+      "id": "btn_down",
+      "top": 170.6,
+      "left": -115.2,
+      "attrs": { "color": "red", "label": "-" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led",
+      "top": -138,
+      "left": -53.8,
+      "attrs": { "color": "blue", "label": "READY" }
+    },
+    { "type": "wokwi-relay-module", "id": "relay", "top": 67.4, "left": 355.2, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:VIN", "lcd:VCC", "red", [] ],
+    [ "esp:GND.1", "lcd:GND", "black", [] ],
+    [ "esp:D21", "lcd:SDA", "green", [] ],
+    [ "esp:D22", "lcd:SCL", "blue", [] ],
+    [ "esp:VIN", "relay:VCC", "red", [] ],
+    [ "esp:GND.1", "relay:GND", "black", [] ],
+    [ "esp:D15", "relay:IN", "orange", [] ],
+    [ "esp:D2", "led:A", "purple", [] ],
+    [ "esp:GND.1", "led:C", "black", [] ],
+    [ "esp:D12", "btn_up:2.l", "green", [] ],
+    [ "esp:GND.1", "btn_up:1.l", "black", [] ],
+    [ "esp:D14", "btn_down:2.l", "red", [] ],
+    [ "esp:GND.1", "btn_down:1.l", "black", [] ]
+  ],
+  "dependencies": {}
+}
+```
+
